@@ -47,22 +47,7 @@ Controls:
 
 
 Liscense:
-		This program is FREEWARE. I'd appreciate the program being mentioned in any
-commercial programs that make any use of MouseEvent code, but this is not required.
-This program provided is provided 'as-is', without any express or implied warranty.
-In no event will the author be held liable for any damages arising from the use/misuse
-of this software. Halo is copyright by Microsoft/Bungie and I did not create it or help
-create it nor am I associated with Microsoft or Bungie. I simply was inspired by how 
-the zoom in the game was done and wrote something like that for the new mouse speed mode.
-
-	Distribution: Anyone can distribute MouseEvent by itself as long as these 
-		conditions are meant. 
-	   The package (i.e. the zip file that MouseEvent is downloaded in) has all the
-           original files in it. 
-
-	If you take a part of MouseEvent and use add it to your software (for example taking the inireader and
-adding it to software you are working on), you do not have to distribute it as a single package. 
-
+		See License.txt for current one
 
 
 
