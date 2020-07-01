@@ -1,0 +1,13 @@
+
+
+global function FetchMouseThreshholdVars()
+	sequence s
+	atom int3_array int3_array = allocate(4*3)
+	if c_func(SystemParametersInfoA_func,{SPI_GETMOUSE,0,int3_array,0}) != 0 then
+		s = peek4u({int3_array,3})
+		free(int3_array)
+		return s
+	end if
+	free(int3_array)
+	return -1
+end function

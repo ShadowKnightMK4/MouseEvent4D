@@ -1,0 +1,39 @@
+include dll.e
+
+atom name_ptr
+name_ptr = allocate(512)
+
+global procedure FreeWindowClass()
+	if name_ptr != 0 then
+		free(name_ptr)
+	end if
+end procedure
+
+global function GetForegroundWindow()
+	return c_func(GetForegroundWindow_func,{})
+end function
+
+global function GetClassName(atom hWnd)
+	integer ret
+	sequence i
+	atom step
+	mem_set(name_ptr,0,512)
+	ret = c_func(GetClassNameA_func,{hWnd,name_ptr,512})
+	if ret != 0 then
+		i = {}
+		step = 0
+		while step <= 512 do
+			i &= peek(name_ptr+step)
+			step+= 1
+			if i[$] = 0 then
+				i = i[1..$-1]
+				exit
+			end if
+		end while
+		return i
+	else
+		return GetLastError()
+	end if
+	
+end function
+

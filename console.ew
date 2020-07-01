@@ -1,0 +1,10 @@
+include dll.e
+
+
+global function SetConsoleCtrlHandler(atom id,atom Add)
+    if Add != 0 then
+	Add = 1
+    end if
+	return c_func(xSetConsoleCtrlHandler,{id,Add})
+end function
+

@@ -1,0 +1,28 @@
+
+
+-- Turn the mouse cursor on if there's no
+-- mouse present.
+
+
+global function MouseOn()
+	atom result
+	result = c_func(xGetSystemMetrics,{SM_MOUSEPRESENT})
+	if not result then
+		-- show the cursor since there's no mouse
+		if c_func(xShowCursor,{1}) then end if
+		if c_func(xShowCursor,{1}) then end if
+	end if
+	return result
+end function
+-- Turn the mouse off if there's no mouse 
+-- present.
+
+global function MouseOff()
+	atom result
+	result = c_func(xGetSystemMetrics,{SM_MOUSEPRESENT})
+	if not result then
+		if c_func(xShowCursor,{0}) then end if
+		if c_func(xShowCursor,{0}) then end if
+	end if
+	return result
+end function

@@ -1,0 +1,480 @@
+include constants.e
+  atom inTrace_var inTrace_var = 0
+  
+
+    without warning
+
+
+-- version 4c - its an error for any module other than
+-- loadini to modify these values
+global atom MYPRIORITY,
+	 VK_UP,
+	 VK_DOWN,
+	 VK_LEFT,
+	 VK_RIGHT,
+	 
+	VK_QUIT,
+	 
+	VK_LEFTCLICK,
+	VK_RIGHTCLICK,
+	 
+	  
+	 VK_WHEELPLUS,
+	 VK_WHEELMINUS,
+
+
+	 MOUSE_MOVE_CLICK, -- FOR EACH MOVE event move This 'mickies'
+	 MOUSE_MOVE_OVERFLOW, -- IF the UP,DOWN,LEFT,RIGHT Flow values
+				    -- each this a move event is generated
+	 MOUSE_MOVE_OVERFLOW_START, -- intial x flow value
+	 MOUSE_MOVE_OVERFLOW_INC,
+	 SHIFT_MUL_STYLE, -- 0 = old style/ normal mode
+			  -- 1 = Halo Style/ zoom mode
+	 SHIFT_MUL_STEP, -- use in Halo Style shift - holds value 1-3 specifying SHIFT_MUL
+			 -- increment
+			 -- 1 = 50% or 1/2 of SHIFT_MUL is shift MUL
+			 -- 2 = 100% or 1/1 of SHIFT_MUL
+			 -- 3 = 200% or 2/1 of shift_Mul
+	 HALO_ZOOM_SOUND,
+	 SHIFT_MUL,     -- If shift + a mouse move key is presed
+			-- The amount is doubles in normal shift_mul_style mode
+			-- thus getting faster mouse
+	 MOUSE_MOVE_MODE,
+	 INSTALL_KEYPAD_BLOCKER,
+	 LOGERRORS,
+	 LOGWARNINGS,
+	 MESSAGE_SHOWING,
+	 RELEASE_CONSOLE,
+	 STEP_SLEEP_COUNT,
+
+
+	 SPEED_CAP, -- flag - if true then relative movement is capped
+				-- so that Windows does not multiply the movement
+
+	 MOUSE_ABS_MUL -- in absolute mode - MOUSE_MOVE_CLICKS is multiplied
+			       -- by this
+global sequence LOGFILE
+trace(1)
+include loadini.e
+include mouseevent4.e
+include playsound.ew
+
+global procedure step_halo_zoom()
+	if SHIFT_MUL_STYLE = HALO_ZOOM_STYLE then
+		if SHIFT_MUL_STEP +1 <= 3 then
+			SHIFT_MUL_STEP += 1
+			if HALO_ZOOM_SOUND then
+				if PlaySound("zoom_in.wav",1) then end if
+			end if
+		else
+			SHIFT_MUL_STEP = 1
+			if HALO_ZOOM_SOUND then
+				if PlaySound("zoom_out.wav",1) then end if
+			end if
+		end if
+	end if
+	-- SHIFT_MUL adjustments for Halo or zoom style are done when factoring shift in
+end procedure
+constant halo_zoom_muls_const = { 0.5, 1.0, 2.0 }
+
+global function factor_halo_zoom()
+	if SHIFT_MUL_STYLE = HALO_ZOOM_STYLE then
+		return halo_zoom_muls_const[SHIFT_MUL_STEP] * SHIFT_MUL_STEP
+	end if
+	return 1
+end function
+-- this specialist function takes 2 parameters
+
+-- if SPEED_CAP is false then function just returns x
+-- the value to cap
+-- the return result of FetchMouseThresholdVars()
+
+-- it returns the value caps to be above -FetchXX() if x is < 0 or below +Fetch
+
+-- hoveever if the FetchXXX() is {0,0,0} then it returns the value unaltered
+function cap(atom x,sequence y)
+	if SPEED_CAP = 0 or equal(y,{0,0,0}) then
+		return x
+	else
+		if x > 0 then
+			if x > y[1] then
+				x = y[1]
+			end if
+			if x > y[2] then
+				x = y[2]
+			end if
+		else
+			if x < -y[1] then
+				x = -y[1]
+			end if
+			if x < -y[2] then
+				x = -y[2]
+			end if
+		end if
+		return x
+	end if
+end function
+atom notify_handle notify_handle = INVALID_HANDLE_VALUE
+object class_window_name
+
+procedure myexit()
+    ReleaseMutex()
+    FreeWindowClass()
+    ReleaseHook()
+    if notify_handle != INVALID_HANDLE_VALUE then
+	if FindCloseChangeNotification(notify_handle) then end if
+    end if
+    if MouseOff() then end if
+    ReleaseConsoleHook()
+end procedure
+
+-- do this so on crash and on abort mycleanup routine is called
+add_on_exit(routine_id("myexit"))
+
+
+
+constant press_val = power(2,32)-1
+-- tests to see if the value returned by GetKeyState() says X key was presed
+--  atom key = Value returned by GetKeyState()
+function Pressed(atom key)
+	return and_bits(key,press_val)
+end function
+
+procedure center_cursor()
+	mouse_event({MOUSEEVENTF_MOVE,MOUSEEVENTF_ABSOLUTE},floor(#FFFF/2),floor(#FFFF/2),0,0)
+end procedure
+
+
+atom MSGBUFFER
+MSGBUFFER = allocate(8 * 4) -- 7 entries and the point entry is 2 longs so 8 slots total
+
+procedure main()
+
+    -- flags uses to keep from generating left pressed each time the key is pressed
+    atom leftpressed,rightpressed
+	
+	-- keyreading - one for each key
+	atom UP,DOWN,LEFT,RIGHT,LEFTCLICK,RIGHTCLICK,KEYQUIT,KEYWHEELPLUS,KEYWHEELMINUS,SHIFT
+    
+	-- var used to force pressing the shift key for halo zoom style each time you wish to adjust
+	atom LAST_SHIFT
+	-- overflow values used by mouse movement
+	atom UPFLOW, DOWNFLOW, LEFTFLOW, RIGHTFLOW,TMPFLOW
+
+	-- in absolute mode these vars hold the mouse's position
+	-- in relative mode these vars are not touched
+	atom mouse_x,mouse_y
+	-- tmp value for WaitForSingleObject() results
+	atom test
+
+	object speed_cap_vars
+	LAST_SHIFT = 0
+	LoadConfigFile()                
+	link_dlls()
+	 if RELEASE_CONSOLE then
+	 --   free_console()
+	 end if
+
+	 
+	UPFLOW = MOUSE_MOVE_OVERFLOW_START
+	DOWNFLOW = MOUSE_MOVE_OVERFLOW_START
+	LEFTFLOW = MOUSE_MOVE_OVERFLOW_START
+	RIGHTFLOW = MOUSE_MOVE_OVERFLOW_START
+	-- 
+	-- activate a user32 hook to block the keys we use 
+	ActiveHook()
+	-- Do a hook that allows use to see if we're being closes/ shutdown computer
+	ActiveConsoleHook()
+	leftpressed= 0 rightpressed = 0
+	speed_cap_vars = FetchMouseThreshholdVars()
+	if MouseOn() = 0 then
+		if MOUSE_MOVE_MODE = DEFAULT then
+			MOUSE_MOVE_MODE = MOUSE_ABS
+		end if
+	else
+		if MOUSE_MOVE_MODE = DEFAULT then
+			MOUSE_MOVE_MODE = MOUSE_REL
+		end if
+	end if
+
+	-- lower my priority so I don't interface with system operating ability
+	if SetPriorityClass(GetCurrentProcess(),MYPRIORITY) = 0 then
+	    show_error("Unable to set my schedule!\r\n")
+	end if
+
+	notify_handle =  FindFirstChangeNotification(get_root(cmd[2]),0,
+						or_bits(FILE_NOTIFY_CHANGE_SIZE,FILE_NOTIFY_CHANGE_LAST_WRITE))
+	if notify_handle = INVALID_HANDLE_VALUE then
+		show_message("Warning: Unable to create a change notify handle. Any changes to the config file will not be reconized until MouseEvent4d is closed and reopened.")
+	end if
+	class_window_name = "" 
+
+	 if MOUSE_MOVE_MODE = MOUSE_ABS then
+		center_cursor()
+		mouse_x = #FFFF/2
+		mouse_y = #FFFF/2
+	 end if
+    -- keep looping until we get signled to shutdown
+    while  1 do
+	UP = GetKeyState(VK_UP)
+	LEFT = GetKeyState(VK_LEFT)
+	DOWN = GetKeyState(VK_DOWN)
+	RIGHT = GetKeyState(VK_RIGHT)
+	LEFTCLICK = GetKeyState(VK_LEFTCLICK)
+	RIGHTCLICK = GetKeyState(VK_RIGHTCLICK)
+	KEYQUIT = GetKeyState(VK_QUIT)
+	KEYWHEELPLUS = GetKeyState(VK_WHEELPLUS)
+	KEYWHEELMINUS = GetKeyState(VK_WHEELMINUS)
+
+	SHIFT = Pressed(GetKeyState(VK_SHIFT))		
+	if SHIFT_MUL_STYLE = HALO_ZOOM_STYLE then
+		if SHIFT then
+			if LAST_SHIFT = 0 then
+				step_halo_zoom()
+				LAST_SHIFT = 1
+			end if
+		else
+			LAST_SHIFT = 0
+		end if
+		SHIFT = 1
+	end if
+
+		-- **** MOUSE MOVE****
+	-- Each move is trackes in an overflow var that when it reaches
+	-- a value - a mouse move is generetated and the valeu is reset
+	if Pressed(UP) then
+	    TMPFLOW = UPFLOW + MOUSE_MOVE_OVERFLOW_INC
+	    if TMPFLOW > MOUSE_MOVE_OVERFLOW then
+		-- reset val and generate event
+		UPFLOW = MOUSE_MOVE_OVERFLOW_START
+		if SHIFT then
+		    if MOUSE_MOVE_MODE = MOUSE_ABS then
+			mouse_y -= MOUSE_MOVE_CLICK*factor_halo_zoom()*MOUSE_ABS_MUL
+			if mouse_y < 0 then
+				mouse_y = 0
+			end if
+		    else
+			mouse_event({MOUSEEVENTF_MOVE}, 0, cap(-MOUSE_MOVE_CLICK*factor_halo_zoom(),speed_cap_vars), 0,0)
+		    end if
+		else
+ 		    if MOUSE_MOVE_MODE = MOUSE_ABS then
+			mouse_y -= MOUSE_MOVE_CLICK*MOUSE_ABS_MUL
+			if mouse_y < 0 then
+				mouse_y = 0
+			end if
+		    else
+			mouse_event({MOUSEEVENTF_MOVE}, 0, cap(-MOUSE_MOVE_CLICK,speed_cap_vars), 0,0)
+		    end if
+		end if
+	    else
+		-- update overflow var
+
+		UPFLOW = TMPFLOW
+	    end if
+	    
+	end if
+	
+	if Pressed(DOWN) then
+	    TMPFLOW = DOWNFLOW + MOUSE_MOVE_OVERFLOW_INC
+	    if TMPFLOW > MOUSE_MOVE_OVERFLOW then
+		-- reset val and do event
+		DOWNFLOW = MOUSE_MOVE_OVERFLOW_START
+		if SHIFT then
+		    if MOUSE_MOVE_MODE = MOUSE_ABS then
+			mouse_y += MOUSE_MOVE_CLICK*factor_halo_zoom()*MOUSE_ABS_MUL
+			if mouse_y > #FFFF then
+				mouse_y = #FFFF
+			end if
+		    else
+			mouse_event({MOUSEEVENTF_MOVE}, 0, cap(+MOUSE_MOVE_CLICK * factor_halo_zoom(),speed_cap_vars), 0,0)
+		    end if
+		else
+		    if MOUSE_MOVE_MODE = MOUSE_ABS then
+			mouse_y += MOUSE_MOVE_CLICK*MOUSE_ABS_MUL
+			if mouse_y > #FFFF then
+				mouse_y = #FFFF
+			end if
+		    else
+			mouse_event({MOUSEEVENTF_MOVE}, 0, cap(+MOUSE_MOVE_CLICK,speed_cap_vars), 0,0)
+		    end if
+		end if
+	    else
+		-- update overflow var
+		DOWNFLOW =  TMPFLOW
+	    end if
+	end if
+	
+	if Pressed(LEFT) then
+		TMPFLOW = LEFTFLOW + MOUSE_MOVE_OVERFLOW_INC
+		if TMPFLOW > MOUSE_MOVE_OVERFLOW then
+		    -- reset val and do event
+		    LEFTFLOW = MOUSE_MOVE_OVERFLOW_START
+		    if SHIFT then
+		   	if MOUSE_MOVE_MODE = MOUSE_ABS then
+			   mouse_x -= MOUSE_MOVE_CLICK*factor_halo_zoom()*MOUSE_ABS_MUL
+			   if mouse_x < 0 then
+				mouse_x = 0
+			   end if
+			else
+			   mouse_event({MOUSEEVENTF_MOVE}, cap(-MOUSE_MOVE_CLICK * factor_halo_zoom(),speed_cap_vars), 0, 0,0)
+			end if
+		    else
+		        if MOUSE_MOVE_MODE = MOUSE_ABS then
+			   mouse_x -= MOUSE_MOVE_CLICK*MOUSE_ABS_MUL
+			   if mouse_x < 0 then
+				mouse_x = 0
+			   end if
+			else
+			   mouse_event({MOUSEEVENTF_MOVE}, cap(-MOUSE_MOVE_CLICK,speed_cap_vars), 0, 0,0)
+			end if
+		    end if
+		else
+		    -- update overflow var
+		    LEFTFLOW = TMPFLOW
+		end if
+	end if
+	
+	if Pressed(RIGHT) then
+		TMPFLOW = RIGHTFLOW + MOUSE_MOVE_OVERFLOW_INC
+		if TMPFLOW > MOUSE_MOVE_OVERFLOW then
+		    -- reset val and do event
+		    RIGHTFLOW = MOUSE_MOVE_OVERFLOW_START
+		    if SHIFT then
+			 if MOUSE_MOVE_MODE = MOUSE_ABS then
+			    mouse_x += MOUSE_MOVE_CLICK*factor_halo_zoom()*MOUSE_ABS_MUL
+			    if mouse_x > #FFFF then
+				mouse_x = #FFFF
+			    end if
+			 else
+			    mouse_event({MOUSEEVENTF_MOVE}, cap(+MOUSE_MOVE_CLICK * factor_halo_zoom(),speed_cap_vars), 0, 0,0)
+			 end if
+		    else
+			 if MOUSE_MOVE_MODE = MOUSE_ABS then
+			    mouse_x += MOUSE_MOVE_CLICK*MOUSE_ABS_MUL
+			    if mouse_x > #FFFF then
+				mouse_x = #FFFF
+			    end if
+			 else
+			    mouse_event({MOUSEEVENTF_MOVE}, cap(+MOUSE_MOVE_CLICK,speed_cap_vars), 0, 0,0)
+			 end if
+		    end if
+		
+		else
+		    -- update overflow var
+		    RIGHTFLOW = TMPFLOW
+		end if
+	end if
+	
+	 if MOUSE_MOVE_MODE = MOUSE_ABS then
+		mouse_event({MOUSEEVENTF_MOVE,MOUSEEVENTF_ABSOLUTE},mouse_x,mouse_y,0,0)
+	 end if
+	-- *** END MOUSE MOVE***
+	
+	
+	-- ***** MOUSE WHEEL
+	if Pressed(KEYWHEELPLUS) then
+		mouse_event({MOUSEEVENTF_WHEEL},0,0,+4,0)
+	end if
+	
+	if Pressed(KEYWHEELMINUS) then
+		mouse_event({MOUSEEVENTF_WHEEL},0,0,-4,0)
+	end if
+	
+	
+	
+	-- Should we quit now ?
+	if Pressed(KEYQUIT) then
+		exit
+	end if
+	
+	
+	--**** LEFT CLICKED ****
+	if Pressed(LEFTCLICK) then
+	    if not leftpressed then
+		mouse_event({MOUSEEVENTF_LEFTDOWN},0,0,0,0)
+		leftpressed = 1
+	    end if
+	else
+	    if leftpressed then
+		mouse_event({MOUSEEVENTF_LEFTUP},0,0,0,0)
+		leftpressed = 0
+	    end if
+	end if
+
+	-- **** RIGHT CLICKED *****
+	if Pressed(RIGHTCLICK) then
+	    if not rightpressed then
+		mouse_event({MOUSEEVENTF_RIGHTDOWN},0,0,0,0)
+		rightpressed = 1
+	    end if
+	else
+	    if rightpressed then
+		mouse_event({MOUSEEVENTF_RIGHTUP},0,0,0,0)
+		rightpressed = 0
+	    end if
+	end if
+	
+	if ABORTNOW then
+	    exit
+	end if
+
+	-- check if config.ini was changed and if so then
+	-- reload it
+	if notify_handle != INVALID_HANDLE_VALUE then
+		test = WaitForSingleObject(notify_handle,0)
+		if test = WAIT_TIMEOUT then
+			-- no change
+		elsif test = WAIT_FAILED then
+			-- error 
+			show_error(sprintf("Error: WaitForSingleObject failed with error code '%d'.\n",{GetLastError()}))
+		elsif test = WAIT_OBJECT_0 then
+			-- changed
+			LoadConfigFile()
+			
+			if MouseOff() then end if
+			if MouseOn() = 0 then
+				if MOUSE_MOVE_MODE = DEFAULT then
+					MOUSE_MOVE_MODE = MOUSE_ABS
+				end if
+			else
+				if MOUSE_MOVE_MODE = DEFAULT then
+					MOUSE_MOVE_MODE = MOUSE_REL
+				end if
+			end if
+			 if MOUSE_MOVE_MODE = MOUSE_ABS then
+				center_cursor()
+				mouse_x = #FFFF/2
+				mouse_y = #FFFF/2
+			 end if
+			if FindNextChangeNotification(notify_handle) = 0 then
+				show_error(sprintf("Error: FindNextChangeNotification failed with error code '%d'.\n",{GetLastError()}))
+			end if
+			LAST_SHIFT = 0
+		end if
+	end if
+
+	-- update name of current window user is working with
+	--class_window_name = GetClassName(GetForegroundWindow())
+--	if atom(class_window_name) then
+		-- failed to get
+--		show_error(sprintf("Failed to get the name of the class of window with code %d.\n",{GetLastError()}))
+--	end if
+	--if KnownConfigForClassExists(class_window_name) then
+		-- lets load it
+	--end if
+	-- update the class window name
+
+	if NoWaitGetMessage(MSGBUFFER) then
+		if DispatchMessage(MSGBUFFER) then end if
+	end if
+
+
+	if c_func(xSleep,{STEP_SLEEP_COUNT}) then end if
+    end while
+
+end procedure
+ 
+main()
+
+-- quit
+exit_app(0)

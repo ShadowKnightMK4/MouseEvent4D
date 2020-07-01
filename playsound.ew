@@ -1,0 +1,25 @@
+
+include machine.e
+global function PlaySound(sequence soundname,
+			  object how)
+	atom howw
+	atom p,r
+	if atom(how) then
+		howw = how
+	else
+		howw = 0
+		for wrk = 1 to length(how) do
+			howw = or_bits(howw,how[wrk])
+		end for
+	end if
+	if length(soundname) then
+		p = allocate_string(soundname)
+	else
+		p = NULL
+	end if
+	r = c_func(xPlaySoundA_func,{p,NULL,howw})
+	if p then
+		free(p)
+	end if
+	return r
+end function
