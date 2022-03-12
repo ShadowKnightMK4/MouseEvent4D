@@ -4,11 +4,15 @@ documentation for settings can be useful. This app is slightly modified in which
 prevent Explorer freezing if the code is ran in a 64bit environment. When certain Security related software such as Norton
 Antivirus has the focus, this app can't interact with it and does not work until the focus is away.
 
+IMPORTANT!
 	This is a rather ancient piece of coding I wrote because my PS2 port mouse would come loose easy
 and I got tired of restarting Windows to get it to work again. It was made in the Windows XP area long ago when Windows was
 primarily 32-bit.  This app does not play terribly well in 64-bit mode but is functional. Modern Windows also prevents certain
 software work working with each other for security purposes. It should work ok with 32-bit versionf of Windows and/or older
 versions that don't implement modern security.
+IMPORTANT!
+
+
 
 	You will need to pick up a copy of the Euphoria Interpreter at www.rapideuphoria.com to use the source. To run this 
 software run "exw.exe mouseevent4d.exw"  The EXW file is the main entry point for this code. The version this code targets is version 3.0
@@ -46,12 +50,8 @@ Controls:
 	Shift in the 'halo' mode toggles between 3 speeds.
 
 
-Liscense:
+License:
 		See License.txt for current one
-
-
-
-
 
 
 
